@@ -69,7 +69,7 @@ namespace Water4ENBwatercolor
                 patchedCount++;
             }
 
-            System.Console.WriteLine($"Successfully patched {patchedCount} records with NaturalShadesOfSkyrim {_settings.Value.NaturalShadesOfSkyrim}.");
+            System.Console.WriteLine($"Successfully patched {patchedCount} records");
         }
     }
 }
