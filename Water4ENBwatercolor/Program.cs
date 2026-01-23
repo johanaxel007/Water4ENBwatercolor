@@ -5,28 +5,21 @@ using Mutagen.Bethesda.Plugins;
 using System.Drawing;
 using System.Threading.Tasks;
 using Water4ENBwatercolor.Settings;
-
-
 namespace Water4ENBwatercolor
 {
-
     public class Program
     {
         private static Lazy<Settings.Settings> _settings = null!;
-
         // ENB colors
         private static readonly Color ENBSunrise = Color.FromArgb(137, 160, 171);
         private static readonly Color ENBDay = Color.FromArgb(175, 216, 237);
         private static readonly Color ENBSunset = Color.FromArgb(105, 142, 154);
         private static readonly Color ENBNight = Color.FromArgb(31, 63, 75);
-
         // CS colors 
         private static readonly Color CSSunrise = Color.FromArgb(154, 154, 154);
         private static readonly Color CSDay = Color.FromArgb(210, 210, 210);
         private static readonly Color CSSunset = Color.FromArgb(138, 138, 138);
         private static readonly Color CSNight = Color.FromArgb(60, 60, 60);
-
-
         public static async Task<int> Main(string[] args)
         {
             return await SynthesisPipeline.Instance
@@ -35,11 +28,8 @@ namespace Water4ENBwatercolor
                 .SetTypicalOpen(GameRelease.SkyrimSE, "WaterColorPatcher.esp")
                 .Run(args);
         }
-
-
         public static void RunPatch(IPatcherState<ISkyrimMod, ISkyrimModGetter> state)
         {
-
             Color targetSunrise, targetDay, targetSunset, targetNight;
             if (_settings.Value.ENB)
             {
@@ -55,21 +45,31 @@ namespace Water4ENBwatercolor
                 targetSunset = CSSunset;
                 targetNight = CSNight;
             }
-
             int patchedCount = 0;
+            int skippedCount = 0;
 
             foreach (var weatherGetter in state.LoadOrder.PriorityOrder.Weather().WinningOverrides())
             {
-                var weather = state.PatchMod.Weathers.GetOrAddAsOverride(weatherGetter);
-                weather.WaterMultiplierColor.Sunrise = targetSunrise;
-                weather.WaterMultiplierColor.Day = targetDay;
-                weather.WaterMultiplierColor.Sunset = targetSunset;
-                weather.WaterMultiplierColor.Night = targetNight;
-
-                patchedCount++;
+                try
+                {
+                    var weather = state.PatchMod.Weathers.GetOrAddAsOverride(weatherGetter);
+                    weather.WaterMultiplierColor.Sunrise = targetSunrise;
+                    weather.WaterMultiplierColor.Day = targetDay;
+                    weather.WaterMultiplierColor.Sunset = targetSunset;
+                    weather.WaterMultiplierColor.Night = targetNight;
+                    patchedCount++;
+                }
+                catch (System.Exception ex)
+                {
+                    System.Console.WriteLine($"Warning: Skipped weather record {weatherGetter.FormKey} from {weatherGetter.FormKey.ModKey} due to error: {ex.Message}");
+                    skippedCount++;
+                }
             }
-
             System.Console.WriteLine($"Successfully patched {patchedCount} records");
+            if (skippedCount > 0)
+            {
+                System.Console.WriteLine($"Skipped {skippedCount} corrupted/problematic records");
+            }
         }
     }
 }
