@@ -5,21 +5,26 @@ using Mutagen.Bethesda.Plugins;
 using System.Drawing;
 using System.Threading.Tasks;
 using Water4ENBwatercolor.Settings;
+
 namespace Water4ENBwatercolor
 {
     public class Program
     {
         private static Lazy<Settings.Settings> _settings = null!;
+
         // ENB colors
         private static readonly Color ENBSunrise = Color.FromArgb(137, 160, 171);
         private static readonly Color ENBDay = Color.FromArgb(175, 216, 237);
         private static readonly Color ENBSunset = Color.FromArgb(105, 142, 154);
+
         private static readonly Color ENBNight = Color.FromArgb(31, 63, 75);
+
         // CS colors 
         private static readonly Color CSSunrise = Color.FromArgb(154, 154, 154);
         private static readonly Color CSDay = Color.FromArgb(210, 210, 210);
         private static readonly Color CSSunset = Color.FromArgb(138, 138, 138);
         private static readonly Color CSNight = Color.FromArgb(60, 60, 60);
+
         public static async Task<int> Main(string[] args)
         {
             return await SynthesisPipeline.Instance
@@ -28,9 +33,12 @@ namespace Water4ENBwatercolor
                 .SetTypicalOpen(GameRelease.SkyrimSE, "WaterColorPatcher.esp")
                 .Run(args);
         }
+
         public static void RunPatch(IPatcherState<ISkyrimMod, ISkyrimModGetter> state)
         {
             Color targetSunrise, targetDay, targetSunset, targetNight;
+
+            // Select color palette based on settings
             if (_settings.Value.ENB)
             {
                 targetSunrise = ENBSunrise;
@@ -45,30 +53,71 @@ namespace Water4ENBwatercolor
                 targetSunset = CSSunset;
                 targetNight = CSNight;
             }
+
             int patchedCount = 0;
             int skippedCount = 0;
+            int excludedCount = 0;
 
             foreach (var weatherGetter in state.LoadOrder.PriorityOrder.Weather().WinningOverrides())
             {
+                // --- SAFETY CHECKS START ---
+
+                // 1. Skip Utility/FX/Interior/Transition weathers based on EditorID
+                // This is the primary defense against patching "Void" weathers from 3DNPC/Wyrmstooth.
+                if (weatherGetter.EditorID != null)
+                {
+                    string id = weatherGetter.EditorID.ToUpperInvariant();
+                    if (id.Contains("DUMMY") ||
+                        id.Contains("FX") ||
+                        id.Contains("INT") || // Interior
+                        id.Contains("TRANSITION") ||
+                        id.Contains("VOID") ||
+                        id.Contains("ABYSS") ||
+                        id.Contains("NONE") || // Often used for 'WeatherNone'
+                        id.Contains("DEFAULT")) // Sometimes default/test weathers
+                    {
+                        excludedCount++;
+                        continue;
+                    }
+                }
+
+                // 2. Skip if Cloud Layers are missing (Strong indicator of a utility weather)
+                // Most functional weathers have cloud layers. Utility weathers often have 0.
+                if (weatherGetter.Clouds.Count == 0)
+                {
+                    excludedCount++;
+                    continue;
+                }
+
+                // --- SAFETY CHECKS END ---
+
                 try
                 {
+                    // Create the override
                     var weather = state.PatchMod.Weathers.GetOrAddAsOverride(weatherGetter);
+
+                    // Apply colors
                     weather.WaterMultiplierColor.Sunrise = targetSunrise;
                     weather.WaterMultiplierColor.Day = targetDay;
                     weather.WaterMultiplierColor.Sunset = targetSunset;
                     weather.WaterMultiplierColor.Night = targetNight;
+
                     patchedCount++;
                 }
                 catch (System.Exception ex)
                 {
+                    // This catches Mutagen write errors, not game logic errors.
                     System.Console.WriteLine($"Warning: Skipped weather record {weatherGetter.FormKey} from {weatherGetter.FormKey.ModKey} due to error: {ex.Message}");
                     skippedCount++;
                 }
             }
-            System.Console.WriteLine($"Successfully patched {patchedCount} records");
+
+            System.Console.WriteLine($"Successfully patched {patchedCount} records.");
+            System.Console.WriteLine($"Excluded {excludedCount} utility/unsafe records to prevent crashes.");
+
             if (skippedCount > 0)
             {
-                System.Console.WriteLine($"Skipped {skippedCount} corrupted/problematic records");
+                System.Console.WriteLine($"Failed to write {skippedCount} records due to internal errors.");
             }
         }
     }
